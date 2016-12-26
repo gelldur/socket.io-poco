@@ -29,8 +29,7 @@ using Poco::NotificationCenter;
 using Poco::Thread;
 using Poco::ThreadTarget;
 
-
-class SIOClientImpl: public Poco::Runnable
+class SIOClientImpl : public Poco::Runnable
 {
 public:
 	bool handshake();
@@ -48,19 +47,18 @@ public:
 	void heartbeat(Poco::Timer& timer);
 	bool receive();
 	void send(std::string endpoint, std::string s);
-	void send(SocketIOPacket *packet);
+	void send(SocketIOPacket* packet);
 	void emit(std::string endpoint, std::string eventname, std::string args);
-  void emit(std::string endpoint, std::string eventname, Poco::JSON::Object::Ptr args);
+	void emit(std::string endpoint, std::string eventname, Poco::JSON::Object::Ptr args);
 
 	std::string getUri();
 
 private:
 
-
 	SIOClientImpl();
 	SIOClientImpl(Poco::URI uri);
 	~SIOClientImpl(void);
-	
+
 	std::string _sid;
 	int _heartbeat_timeout;
 	int _timeout;
@@ -70,16 +68,16 @@ private:
 	bool _connected;
 	SocketIOPacket::SocketIOVersion _version;
 
-	HTTPClientSession *_session;
-	WebSocket *_ws;
-	Timer *_heartbeatTimer;
-	Logger *_logger;
+	HTTPClientSession* _session;
+	WebSocket* _ws;
+	Timer* _heartbeatTimer;
+	Logger* _logger;
 	Thread _thread;
 
 	int _refCount;
-	char *_buffer;
+	char* _buffer;
 	std::size_t _buffer_size;
-	
+
 	//SIOEventRegistry* _registry;
 	//SIONotificationHandler *_sioHandler;
 };

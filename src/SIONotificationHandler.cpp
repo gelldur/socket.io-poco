@@ -29,15 +29,15 @@ SIONotificationHandler::SIONotificationHandler(NotificationCenter* nc)
 
 SIONotificationHandler::~SIONotificationHandler(void)
 {
-//	_nCenter->removeObserver(
-//		Observer<SIONotificationHandler, SIOMessage>(*this, &SIONotificationHandler::handleMessage)
-//		);
-//	_nCenter->removeObserver(
-//		Observer<SIONotificationHandler, SIOJSONMessage>(*this, &SIONotificationHandler::handleJSONMessage)
-//		);
+	//	_nCenter->removeObserver(
+	//		Observer<SIONotificationHandler, SIOMessage>(*this, &SIONotificationHandler::handleMessage)
+	//		);
+	//	_nCenter->removeObserver(
+	//		Observer<SIONotificationHandler, SIOJSONMessage>(*this, &SIONotificationHandler::handleJSONMessage)
+	//		);
 	_nCenter->removeObserver(
-		Observer<SIONotificationHandler, SIOEvent>(*this, &SIONotificationHandler::handleEvent)
-		);
+			Observer<SIONotificationHandler, SIOEvent>(*this, &SIONotificationHandler::handleEvent)
+	);
 }
 
 //void SIONotificationHandler::handleMessage(SIOMessage* pNf)
@@ -62,9 +62,8 @@ void SIONotificationHandler::handleEvent(SIOEvent* pNf)
 	_logger->information("handling Event");
 	_logger->information("data: %s", pNf->data->toString());
 
-
 	Poco::JSON::Array::Ptr arr = new Poco::JSON::Array(pNf->data->getDatas());
-	pNf->client->fireEvent(pNf->data->getEvent().c_str(),arr);
+	pNf->client->fireEvent(pNf->data->getEvent().c_str(), arr);
 	pNf->release();
 }
 
@@ -72,15 +71,15 @@ void SIONotificationHandler::registerCallbacks(NotificationCenter* nc)
 {
 	_nCenter = nc;
 
-//	_nCenter->addObserver(
-//		Observer<SIONotificationHandler, SIOMessage>(*this, &SIONotificationHandler::handleMessage)
-//		);
-//	_nCenter->addObserver(
-//		Observer<SIONotificationHandler, SIOJSONMessage>(*this, &SIONotificationHandler::handleJSONMessage)
-//		);
+	//	_nCenter->addObserver(
+	//		Observer<SIONotificationHandler, SIOMessage>(*this, &SIONotificationHandler::handleMessage)
+	//		);
+	//	_nCenter->addObserver(
+	//		Observer<SIONotificationHandler, SIOJSONMessage>(*this, &SIONotificationHandler::handleJSONMessage)
+	//		);
 	_nCenter->addObserver(
-		Observer<SIONotificationHandler, SIOEvent>(*this, &SIONotificationHandler::handleEvent)
-		);
+			Observer<SIONotificationHandler, SIOEvent>(*this, &SIONotificationHandler::handleEvent)
+	);
 }
 
 void SIONotificationHandler::setNCenter(NotificationCenter* nc)

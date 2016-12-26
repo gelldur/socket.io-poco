@@ -1,15 +1,15 @@
 
 
-set(CMAKE_BUILD_TYPE Debug)
+SET(CMAKE_BUILD_TYPE Debug)
 
-set(source_files
-	main.cpp
-	TestEndpointTarget.cpp
-	TestTarget.cpp
-)
-include_directories(${INCLUDE_SOCKETIOPOCO})
+SET(source_files
+		main.cpp
+		TestEndpointTarget.cpp
+		TestTarget.cpp
+		)
+INCLUDE_DIRECTORIES(${INCLUDE_SOCKETIOPOCO})
 
-add_executable(socketiopoco_example ${source_files})
-target_link_libraries(socketiopoco_example socketiopoco_shared)
+ADD_EXECUTABLE(socketiopoco_example ${source_files})
+TARGET_LINK_LIBRARIES(socketiopoco_example socketiopoco_shared)
 
-install (TARGETS socketiopoco_example DESTINATION bin)
+INSTALL(TARGETS socketiopoco_example DESTINATION bin)

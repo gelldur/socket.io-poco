@@ -3,10 +3,9 @@
 
 using Poco::Logger;
 
-
 TestEndpointTarget::TestEndpointTarget()
 {
-	
+
 }
 
 void TestEndpointTarget::onUpdate(const void* pSender, Array::Ptr& arg)

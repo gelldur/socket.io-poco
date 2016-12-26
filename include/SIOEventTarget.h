@@ -8,8 +8,11 @@ using Poco::JSON::Array;
 class SIOEventTarget
 {
 private:
-	
+
 public:
-	virtual ~SIOEventTarget() {};
+	virtual ~SIOEventTarget()
+	{
+	};
 };
+
 #endif

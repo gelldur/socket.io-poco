@@ -38,6 +38,7 @@ void SocketIOPacket::initWithType(std::string packetType)
 {
 	_type = packetType;
 }
+
 void SocketIOPacket::initWithTypeIndex(int index)
 {
 	_type = _types.at(index);
@@ -65,7 +66,9 @@ std::string SocketIOPacket::toString()
 	// Add the end point for the namespace to be used, as long as it is not
 	// an ACK, heartbeat, or disconnect packet
 	if (_type != "ack" && _type != "heartbeat" && _type != "disconnect")
+	{
 		encoded << _endpoint;
+	}
 	encoded << this->_separator;
 
 	if (_args.size() != 0)
@@ -74,22 +77,24 @@ std::string SocketIOPacket::toString()
 		// This is an acknowledgement packet, so, prepend the ack pid to the data
 		if (_type == "ack")
 		{
-			ackpId += pIdL+"+";
+			ackpId += pIdL + "+";
 		}
 		encoded << ackpId << this->stringify();
 	}
 	return encoded.str();
 }
+
 int SocketIOPacket::typeAsNumber()
 {
 	int num = 0;
 	std::vector<std::string>::iterator item = std::find(_types.begin(), _types.end(), _type);
-	if(item != _types.end())
+	if (item != _types.end())
 	{
 		num = item - _types.begin();
 	}
 	return num;
 }
+
 std::string SocketIOPacket::typeForIndex(int index)
 {
 	return _types.at(index);
@@ -102,31 +107,33 @@ void SocketIOPacket::addData(std::string data)
 
 void SocketIOPacket::addData(Poco::JSON::Object::Ptr data)
 {
-  this->_args.add(data);
+	this->_args.add(data);
 
 } //void SocketIOPacket::addData(Poco::JSON::Object::Ptr data)
 
 void SocketIOPacket::addData(Poco::JSON::Array::Ptr data)
 {
-	for(int i = 0 ; i<data->size();++i)
+	for (int i = 0; i < data->size(); ++i)
+	{
 		this->_args.add(data->get(i));
+	}
 }
 
 std::string SocketIOPacket::stringify()
 {
 	std::string outS;
-	if(_type == "message")
+	if (_type == "message")
 	{
 		outS = _args.get(0).toString();
 	}
 	else
 	{
 		Poco::JSON::Object obj;
-		obj.set("name",_name);
+		obj.set("name", _name);
 		// do not require arguments
 		if (_args.size() != 0)
 		{
-			obj.set("args",_args);
+			obj.set("args", _args);
 		}
 		std::stringstream ss;
 		obj.stringify(ss);
@@ -165,7 +172,7 @@ int SocketIOPacketV10x::typeAsNumber()
 {
 	int num = 0;
 	std::vector<std::string>::iterator item = std::find(_typesMessage.begin(), _typesMessage.end(), _type);
-	if(item != _typesMessage.end())
+	if (item != _typesMessage.end())
 	{//it's a message
 		num = item - _typesMessage.begin();
 		num += 40;
@@ -175,7 +182,7 @@ int SocketIOPacketV10x::typeAsNumber()
 		item = std::find(_types.begin(), _types.end(), _type);
 		num += item - _types.begin();
 	}
-    return num;
+	return num;
 }
 
 std::string SocketIOPacketV10x::stringify()
@@ -183,8 +190,10 @@ std::string SocketIOPacketV10x::stringify()
 	std::stringstream ss;
 	Poco::JSON::Array data;
 	data.add(_name);
-	for(int i = 0 ; i<_args.size();++i)
+	for (int i = 0; i < _args.size(); ++i)
+	{
 		data.add(_args.get(i));
+	}
 	data.stringify(ss);
 	return ss.str();
 }
@@ -201,9 +210,9 @@ SocketIOPacketV10x::~SocketIOPacketV10x()
 	_endpoint = "";
 }
 
-SocketIOPacket * SocketIOPacket::createPacketWithType(std::string type, SocketIOPacket::SocketIOVersion version)
+SocketIOPacket* SocketIOPacket::createPacketWithType(std::string type, SocketIOPacket::SocketIOVersion version)
 {
-	SocketIOPacket *ret;
+	SocketIOPacket* ret;
 	switch (version)
 	{
 		case SocketIOPacket::V09x:
@@ -217,10 +226,9 @@ SocketIOPacket * SocketIOPacket::createPacketWithType(std::string type, SocketIO
 	return ret;
 }
 
-
-SocketIOPacket * SocketIOPacket::createPacketWithTypeIndex(int type, SocketIOPacket::SocketIOVersion version)
+SocketIOPacket* SocketIOPacket::createPacketWithTypeIndex(int type, SocketIOPacket::SocketIOVersion version)
 {
-	SocketIOPacket *ret;
+	SocketIOPacket* ret;
 	switch (version)
 	{
 		case SocketIOPacket::V09x:
