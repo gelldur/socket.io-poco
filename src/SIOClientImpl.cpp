@@ -1,10 +1,8 @@
 #include "SIOClientImpl.h"
 
 #include "Poco/Net/HTTPRequest.h"
-#include "Poco/Net/HTTPSClientSession.h"
 #include "Poco/Net/HTTPResponse.h"
 #include "Poco/Net/HTTPMessage.h"
-#include "Poco/Net/Context.h"
 #include "Poco/Net/WebSocket.h"
 #include "Poco/Net/NetException.h"
 #include "Poco/Net/SocketAddress.h"
@@ -35,8 +33,6 @@ using Poco::Net::HTTPResponse;
 using Poco::Net::HTTPMessage;
 using Poco::Net::NetException;
 using Poco::Net::SocketAddress;
-using Poco::Net::Context;
-using Poco::Net::HTTPSClientSession;
 using Poco::StreamCopier;
 using Poco::StringTokenizer;
 using Poco::cat;
@@ -54,14 +50,14 @@ SIOClientImpl::SIOClientImpl()
 
 SIOClientImpl::SIOClientImpl(URI uri)
 		:
-		_buffer(NULL)
+		_buffer(nullptr)
 		, _buffer_size(0)
 		, _port(uri.getPort())
 		, _host(uri.getHost())
 		, _refCount(0)
 {
 	_uri = uri;
-	_ws = NULL;
+	_ws = nullptr;
 
 }
 
@@ -79,7 +75,7 @@ SIOClientImpl::~SIOClientImpl(void)
 	if (_buffer)
 	{
 		delete[] _buffer;
-		_buffer = NULL;
+		_buffer = nullptr;
 		_buffer_size = 0;
 	}
 
@@ -110,15 +106,14 @@ bool SIOClientImpl::handshake()
 	UInt16 aport = _port;
 	if (_uri.getScheme() == "https")
 	{
-		const Context::Ptr context(new Context(Context::CLIENT_USE, "", "", "", Context::VERIFY_NONE));
-		_session = new HTTPSClientSession(_host, aport, context);
+		return false;
 	}
 	else
 	{
 		_session = new HTTPClientSession(_host, aport);
 	}
 	_session->setKeepAlive(false);
-	HTTPRequest req(HTTPRequest::HTTP_GET, "/socket.io/1/?EIO=2&transport=polling", HTTPMessage::HTTP_1_1);
+	HTTPRequest req(HTTPRequest::HTTP_GET, "/?EIO=2&transport=websocket", HTTPMessage::HTTP_1_1);
 	req.set("Accept", "*/*");
 	req.setContentType("text/plain");
 	req.setHost(_host);
@@ -156,18 +151,19 @@ bool SIOClientImpl::handshake()
 		int a = temp.find('{');
 		temp = temp.substr(a, temp.size() - a);
 		temp = temp.substr(0, temp.find('}', temp.size() - 5) + 1);
-		ParseHandler::Ptr pHandler = new ParseHandler(false);
-		Parser parser(pHandler);
-		Var result = parser.parse(temp);
-		Object::Ptr msg = result.extract<Object::Ptr>();
+		//		ParseHandler::Ptr pHandler = new ParseHandler(false);
+		//		Parser parser(pHandler);
+		//		Var result = parser.parse(temp);
+		//		Object::Ptr msg = result.extract<Object::Ptr>();
 
-		_logger->information("session: %s", msg->get("sid").toString());
-		_logger->information("heartbeat: %s", msg->get("pingInterval").toString());
-		_logger->information("timeout: %s", msg->get("pingTimeout").toString());
+		//_logger->information("session: %s",msg->get("sid").toString());
+		//_logger->information("heartbeat: %s",msg->get("pingInterval").toString());
+		//_logger->information("timeout: %s",msg->get("pingTimeout").toString());
 
-		_sid = msg->get("sid").toString();
-		_heartbeat_timeout = atoi(msg->get("pingInterval").toString().c_str()) / 1000;
-		_timeout = atoi(msg->get("pingTimeout").toString().c_str()) / 1000;
+		//_sid = msg->get("sid").toString();
+		_sid = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6Im15VGVzdCIsIm5hbWUiOiJBcHAtVGVzdCIsImNvbG9yIjoiIzg0Y2Q3MyIsImNsaWVudCI6ImVzcG9ydGNoYXQiLCJpYXQiOjE0ODI0ODg2MDEsImV4cCI6MTQ4MjU3NTAwMX0.yiWJF4geJ9k9H3v5qGLZ_pBOhn5JjyZsCdxzT812riU";
+		_heartbeat_timeout = 5;//atoi(msg->get("pingInterval").toString().c_str())/1000;
+		_timeout = 10;//atoi(msg->get("pingTimeout").toString().c_str())/1000;
 	}
 	else
 	{
@@ -202,7 +198,8 @@ bool SIOClientImpl::openSocket()
 			break;
 		case SocketIOPacket::V10x:
 		{
-			req.setURI("/socket.io/1/websocket/?EIO=2&transport=websocket&sid=" + _sid);
+			req.setURI(
+					"/api/chat/?EIO=3&transport=websocket&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6Im15VGVzdCIsIm5hbWUiOiJBcHAtVGVzdCIsImNvbG9yIjoiIzg0Y2Q3MyIsImNsaWVudCI6ImVzcG9ydGNoYXQiLCJpYXQiOjE0ODI0ODg2MDEsImV4cCI6MTQ4MjU3NTAwMX0.yiWJF4geJ9k9H3v5qGLZ_pBOhn5JjyZsCdxzT812riU");
 		}
 			break;
 	}
@@ -223,12 +220,12 @@ bool SIOClientImpl::openSocket()
 			if (_ws)
 			{
 				delete _ws;
-				_ws = NULL;
+				_ws = nullptr;
 			}
 			Poco::Thread::sleep(100);
 		}
-	} while (_ws == NULL && now.elapsed() < 1000000);
-	if (_ws == NULL)
+	} while (_ws == nullptr && now.elapsed() < 1000000);
+	if (_ws == nullptr)
 	{
 		_logger->error("Impossible to create websocket");
 		return _connected;
@@ -264,7 +261,7 @@ SIOClientImpl* SIOClientImpl::connect(URI uri)
 		return s;
 	}
 
-	return NULL;
+	return nullptr;
 }
 
 void SIOClientImpl::disconnect(std::string endpoint)
@@ -535,9 +532,28 @@ bool SIOClientImpl::receive()
 			switch (control)
 			{
 				case 0:
+				{
 					_logger->information("Not supposed to receive control 0 for websocket");
 					_logger->warning("That's not good");
+
+					int a = data.find('{');
+					std::string temp = data.substr(a, data.size() - a);
+					temp = temp.substr(0, temp.find('}', temp.size() - 5) + 1);
+					ParseHandler::Ptr pHandler = new ParseHandler(false);
+					Parser parser(pHandler);
+					Var result = parser.parse(temp);
+					Object::Ptr msg = result.extract<Object::Ptr>();
+
+					_logger->information("session: %s", msg->get("sid").toString());
+					_logger->information("heartbeat: %s", msg->get("pingInterval").toString());
+					_logger->information("timeout: %s", msg->get("pingTimeout").toString());
+
+					_sid = msg->get("sid").toString();
+					_heartbeat_timeout = atoi(msg->get("pingInterval").toString().c_str()) / 1000;
+					_timeout = atoi(msg->get("pingTimeout").toString().c_str()) / 1000;
+
 					break;
+				}
 				case 1:
 					_logger->information("Not supposed to receive control 1 for websocket");
 					break;

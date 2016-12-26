@@ -1,7 +1,7 @@
 #include "SIOClientRegistry.h"
 #include "SIOClient.h"
 
-SIOClientRegistry* SIOClientRegistry::_inst = NULL;
+SIOClientRegistry* SIOClientRegistry::_inst = nullptr;
 
 SIOClientRegistry* SIOClientRegistry::instance()
 {
@@ -17,7 +17,7 @@ SIOClientRegistry* SIOClientRegistry::instance()
 
 SIOClient* SIOClientRegistry::getClient(std::string uri)
 {
-	SIOClient* c = NULL;
+	SIOClient* c = nullptr;
 	//	std::cout << "Search client:" << uri << std::endl;
 	std::map<std::string, SIOClient*>::iterator it = _clientMap.find(uri);
 	if (it != _clientMap.end())
@@ -43,7 +43,7 @@ void SIOClientRegistry::removeClient(std::string uri)
 SIOClientImpl* SIOClientRegistry::getSocket(std::string uri)
 {
 
-	SIOClientImpl* c = NULL;
+	SIOClientImpl* c = nullptr;
 	//	std::cout << "Search client:" << uri << std::endl;
 	std::map<std::string, SIOClientImpl*>::iterator it = _socketMap.find(uri);
 	if (it != _socketMap.end())

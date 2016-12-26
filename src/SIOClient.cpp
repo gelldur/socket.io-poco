@@ -53,7 +53,7 @@ SIOClient* SIOClient::connect(std::string uri)
 
 			if (!impl)
 			{
-				return NULL;
+				return nullptr;
 			} //connect failed
 
 			SIOClientRegistry::instance()->addSocket(impl, spath);
