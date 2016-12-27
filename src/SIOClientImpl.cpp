@@ -20,7 +20,6 @@
 #include "Poco/RunnableAdapter.h"
 #include "Poco/URI.h"
 
-#include "SIONotifications.h"
 #include "SIOClient.h"
 
 using Poco::JSON::Parser;
@@ -45,14 +44,10 @@ using Poco::Dynamic::Var;
 using Poco::Net::WebSocket;
 using Poco::URI;
 
-SIOClientImpl::SIOClientImpl(URI uri)
-		: SIOClientImpl(uri, Logger::get("SIOClientLog"))
-{
-}
-
-SIOClientImpl::SIOClientImpl(URI uri, Logger& logger)
-		: _logger(logger)
-		, _uri(uri)
+SIOClientImpl::SIOClientImpl(URI uri, const Listener& eventHandler, Logger& logger)
+		: _uri(uri)
+		, _eventHandler(eventHandler)
+		, _logger(logger)
 {
 }
 
@@ -67,7 +62,7 @@ SIOClientImpl::~SIOClientImpl(void)
 	}
 }
 
-bool SIOClientImpl::init()
+bool SIOClientImpl::connect()
 {
 	if (handshake())
 	{
@@ -82,14 +77,7 @@ bool SIOClientImpl::init()
 
 bool SIOClientImpl::handshake()
 {
-	if (_uri.getScheme() == "https")
-	{
-		return false;
-	}
-	else
-	{
-		_session = std::unique_ptr<HTTPClientSession>(new HTTPClientSession(_uri.getHost(), _uri.getPort()));
-	}
+	_session = std::unique_ptr<HTTPClientSession>(new HTTPClientSession(_uri.getHost(), _uri.getPort()));
 	_session->setKeepAlive(true);
 	Poco::URI uri{_uri};
 	uri.setPath("");//I'm not sure why i must remove it here
@@ -193,19 +181,6 @@ bool SIOClientImpl::openSocket()
 
 	return _connected;
 
-}
-
-SIOClientImpl* SIOClientImpl::connect(SIOClient* client, URI uri)
-{
-	SIOClientImpl* s = new SIOClientImpl(uri);
-	s->_client = client;
-
-	if (s && s->init())
-	{
-		return s;
-	}
-
-	return nullptr;
 }
 
 void SIOClientImpl::disconnect(const std::string& endpoint)
@@ -379,24 +354,15 @@ bool SIOClientImpl::receive()
 					++foundEnd;
 
 					Parser parser;
-					const auto& result = parser.parse(std::string{foundBegin, foundEnd});
-					const auto& message = result.extract<Poco::JSON::Array::Ptr>();
+					auto result = parser.parse(std::string{foundBegin, foundEnd});
+					auto message = result.extract<Poco::JSON::Array::Ptr>();
 
-					auto packetOut = std::unique_ptr<SocketIOPacket>(SocketIOPacket::createPacketWithType("event"
-																										  , SocketIOPacket::SocketIOVersion::V10x));
-					packetOut->setEvent(message->get(0).toString());
-					for (int i = 1; i < message->size(); ++i)
+					auto eventName = message->get(0).toString();
+					message->remove(0);
+					if (_eventHandler)
 					{
-						if (message->isArray(i))
-						{
-							packetOut->addData(message->getArray(i));
-						}
-						else
-						{
-							packetOut->addData(message->get(i));
-						}
+						_eventHandler(eventName, message);
 					}
-					_client->getNCenter()->postNotification(new SIOEvent(_client, std::move(packetOut)));
 				}
 					break;
 				case PacketType::PONG:

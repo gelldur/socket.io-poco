@@ -6,8 +6,6 @@ using Poco::URI;
 
 SIOClient::SIOClient(const Poco::URI& uri)
 		: _uri{uri}
-		, _nCenter{new NotificationCenter{}}
-		, _sioHandler{new SIONotificationHandler(_nCenter.get())}
 {
 }
 
@@ -16,15 +14,12 @@ bool SIOClient::connect()
 	//check if connection to endpoint exists
 	if (_socket == nullptr)
 	{
-		_socket = std::shared_ptr<SIOClientImpl>(SIOClientImpl::connect(this, _uri));
-
-		if (_socket == nullptr)
-		{
-			return false;//connect failed
-		}
+		_socket = std::unique_ptr<SIOClientImpl>(
+				new SIOClientImpl(_uri, std::bind(&SIOClient::fireEvent, this, std::placeholders::_1
+												  , std::placeholders::_2)));
 	}
 
-	return true;
+	return _socket->connect();
 }
 
 void SIOClient::disconnect()
@@ -32,17 +27,12 @@ void SIOClient::disconnect()
 	_socket->disconnect("");
 }
 
-NotificationCenter* SIOClient::getNCenter()
-{
-	return _nCenter.get();
-}
-
-void SIOClient::on(const std::string& name, const SIOClient::Listener& listener)
+void SIOClient::on(const std::string& name, const SIOClientImpl::Listener& listener)
 {
 	_listeners.insert(std::make_pair(name, listener));
 }
 
-void SIOClient::fireEvent(const std::string& name, Array::Ptr args)
+void SIOClient::fireEvent(const std::string& name, const Poco::JSON::Array::Ptr& args)
 {
 	auto found = _listeners.equal_range(name);
 	while (found.first != found.second)

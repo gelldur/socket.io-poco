@@ -17,7 +17,6 @@
 
 #include "Poco/JSON/Parser.h"
 
-#include "SIONotificationHandler.h"
 #include "SIOPacket.h"
 
 using Poco::Net::HTTPClientSession;
@@ -31,15 +30,15 @@ using Poco::ThreadTarget;
 class SIOClientImpl : public Poco::Runnable
 {
 public:
-	SIOClientImpl(Poco::URI uri);
-	SIOClientImpl(Poco::URI uri, Logger& logger);
+	using Listener = std::function<void(const std::string& name, const Poco::JSON::Array::Ptr&)>;
+
+	SIOClientImpl(Poco::URI uri, const Listener& eventHandler, Logger& logger = Logger::get("SIOClientLog"));
 	~SIOClientImpl(void);
 
+	bool connect();
 	bool handshake();
 	bool openSocket();
-	bool init();
 
-	static SIOClientImpl* connect(SIOClient* client, Poco::URI uri);
 	void disconnect(const std::string& endpoint);
 	void monitor();
 	virtual void run();
@@ -52,15 +51,11 @@ public:
 			, const std::string& eventname
 			, const std::vector<Poco::Dynamic::Var>& args);
 
-	std::string getUri();
-
 private:
 	const Poco::URI _uri;
 
 	std::chrono::milliseconds _pingInterval = std::chrono::milliseconds{25000};
 	std::chrono::milliseconds _pingTimeout = std::chrono::milliseconds{60000};
-
-	SIOClient* _client = nullptr;
 
 	Thread _thread;
 
@@ -69,6 +64,8 @@ private:
 	std::unique_ptr<HTTPClientSession> _session;
 	std::unique_ptr<Timer> _heartbeatTimer;
 	std::unique_ptr<Poco::Net::WebSocket> _webSocket;
+
+	Listener _eventHandler;
 
 	std::vector<char> _buffer;
 	Logger& _logger;
