@@ -100,18 +100,17 @@ std::string SocketIOPacket::typeForIndex(int index)
 	return _types.at(index);
 }
 
-void SocketIOPacket::addData(std::string data)
+void SocketIOPacket::addData(const std::string& data)
 {
 	this->_args.add(data);
 }
 
-void SocketIOPacket::addData(Poco::JSON::Object::Ptr data)
+void SocketIOPacket::addData(const Poco::Dynamic::Var& data)
 {
 	this->_args.add(data);
+}
 
-} //void SocketIOPacket::addData(Poco::JSON::Object::Ptr data)
-
-void SocketIOPacket::addData(Poco::JSON::Array::Ptr data)
+void SocketIOPacket::addData(const Poco::JSON::Array::Ptr& data)
 {
 	for (int i = 0; i < data->size(); ++i)
 	{

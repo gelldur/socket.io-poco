@@ -48,9 +48,9 @@ public:
 		return _name;
 	};
 
-	void addData(std::string data);
-	void addData(Poco::JSON::Array::Ptr data);
-	void addData(Poco::JSON::Object::Ptr data);
+	void addData(const std::string& data);
+	void addData(const Poco::Dynamic::Var& data);
+	void addData(const Poco::JSON::Array::Ptr& data);
 
 	Poco::JSON::Array getDatas()
 	{
