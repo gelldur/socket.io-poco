@@ -5,7 +5,6 @@
 #include "Poco/JSON/Parser.h"
 #include "Poco/JSON/ParseHandler.h"
 
-#include "SIOEventRegistry.h"
 #include "SIOClient.h"
 
 using Poco::Observer;

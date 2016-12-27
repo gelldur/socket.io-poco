@@ -16,8 +16,6 @@
 #include "Poco/JSON/Parser.h"
 
 #include "SIONotificationHandler.h"
-#include "SIOEventRegistry.h"
-#include "SIOEventTarget.h"
 #include "SIOPacket.h"
 
 using Poco::Net::HTTPClientSession;

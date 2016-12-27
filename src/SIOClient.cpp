@@ -5,8 +5,7 @@
 using Poco::URI;
 
 SIOClient::SIOClient(std::string uri, std::string endpoint)
-		: _registry{new SIOEventRegistry()}
-		, _nCenter{new NotificationCenter{}}
+		: _nCenter{new NotificationCenter{}}
 		, _sioHandler{new SIONotificationHandler(_nCenter.get())}
 		, _uri{uri}
 		, _endpoint{endpoint}
@@ -20,7 +19,7 @@ bool SIOClient::connect()
 
 	if (_socket == nullptr)
 	{
-		_socket = std::shared_ptr<SIOClientImpl>(SIOClientImpl::connect(this,tmp_uri));
+		_socket = std::shared_ptr<SIOClientImpl>(SIOClientImpl::connect(this, tmp_uri));
 
 		if (_socket == nullptr)
 		{
@@ -51,14 +50,19 @@ NotificationCenter* SIOClient::getNCenter()
 	return _nCenter.get();
 }
 
-void SIOClient::on(const char* name, SIOEventTarget* target, callback c)
+void SIOClient::on(const std::string& name, const SIOClient::Listener& listener)
 {
-	_registry->registerEvent(name, target, c);
+	_listeners.insert(std::make_pair(name, listener));
 }
 
-void SIOClient::fireEvent(const char* name, Array::Ptr args)
+void SIOClient::fireEvent(const std::string& name, Array::Ptr args)
 {
-	_registry->fireEvent(this, name, args);
+	auto found = _listeners.equal_range(name);
+	while (found.first != found.second)
+	{
+		found.first->second(name, args);
+		++found.first;
+	}
 }
 
 void SIOClient::send(std::string s)
