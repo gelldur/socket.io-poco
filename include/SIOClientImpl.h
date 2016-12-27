@@ -2,6 +2,7 @@
 #define SIO_ClientImpl_DEFINED
 
 #include <string>
+#include <memory>
 
 #include "Poco/Net/HTTPClientSession.h"
 #include "Poco/Net/WebSocket.h"
@@ -19,7 +20,6 @@
 #include "SIOPacket.h"
 
 using Poco::Net::HTTPClientSession;
-using Poco::Net::WebSocket;
 using Poco::Logger;
 using Poco::Timer;
 using Poco::TimerCallback;
@@ -64,7 +64,7 @@ private:
 	SocketIOPacket::SocketIOVersion _version;
 
 	HTTPClientSession* _session;
-	WebSocket* _ws;
+	std::unique_ptr<Poco::Net::WebSocket> _ws;
 	Timer* _heartbeatTimer;
 	Logger* _logger;
 	Thread _thread;

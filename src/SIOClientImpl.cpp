@@ -55,8 +55,6 @@ SIOClientImpl::SIOClientImpl(URI uri)
 		, _host(uri.getHost())
 {
 	_uri = uri;
-	_ws = nullptr;
-
 }
 
 SIOClientImpl::~SIOClientImpl(void)
@@ -65,8 +63,10 @@ SIOClientImpl::~SIOClientImpl(void)
 	_thread.join();
 	disconnect("");
 
-	_ws->shutdown();
-	delete (_ws);
+	if (_ws)
+	{
+		_ws->shutdown();
+	}
 
 	delete (_heartbeatTimer);
 	delete (_session);
@@ -208,7 +208,7 @@ bool SIOClientImpl::openSocket()
 	{
 		try
 		{
-			_ws = new WebSocket(*_session, req, res);
+			_ws = std::unique_ptr<WebSocket>(new WebSocket(*_session, req, res));
 		}
 		catch (NetException& ne)
 		{
@@ -216,8 +216,7 @@ bool SIOClientImpl::openSocket()
 			_logger->warning("Exception when creating websocket %s : %s - %s", ne.displayText(), ne.code(), ne.what());
 			if (_ws)
 			{
-				delete _ws;
-				_ws = nullptr;
+				_ws.reset();
 			}
 			Poco::Thread::sleep(100);
 		}
