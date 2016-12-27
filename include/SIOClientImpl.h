@@ -3,6 +3,7 @@
 
 #include <string>
 #include <memory>
+#include <chrono>
 
 #include "Poco/Net/HTTPClientSession.h"
 #include "Poco/Net/WebSocket.h"
@@ -31,6 +32,7 @@ class SIOClientImpl : public Poco::Runnable
 {
 public:
 	SIOClientImpl(Poco::URI uri);
+	SIOClientImpl(Poco::URI uri, Logger& logger);
 	~SIOClientImpl(void);
 
 	bool handshake();
@@ -52,24 +54,26 @@ public:
 	std::string getUri();
 
 private:
-	SIOClient* _client = nullptr;
-	std::string _sid;
-	int _heartbeat_timeout;
-	int _timeout;
-	std::string _host;
-	int _port;
-	Poco::URI _uri;
-	bool _connected;
+	const Poco::URI _uri;
+
+	std::chrono::milliseconds _pingInterval = std::chrono::milliseconds{25000};
+	std::chrono::milliseconds _pingTimeout = std::chrono::milliseconds{60000};
+
 	SocketIOPacket::SocketIOVersion _version;
 
-	HTTPClientSession* _session;
-	std::unique_ptr<Poco::Net::WebSocket> _webSocket;
-	Timer* _heartbeatTimer;
-	Logger& _logger;
+	SIOClient* _client = nullptr;
+
 	Thread _thread;
 
-	char* _buffer;
-	std::size_t _buffer_size;
+	std::string _sid;
+	bool _connected = false;
+
+	std::unique_ptr<HTTPClientSession> _session;
+	std::unique_ptr<Timer> _heartbeatTimer;
+	std::unique_ptr<Poco::Net::WebSocket> _webSocket;
+
+	std::vector<char> _buffer;
+	Logger& _logger;
 };
 
 #endif

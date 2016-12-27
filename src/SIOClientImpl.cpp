@@ -1,5 +1,7 @@
 #include "SIOClientImpl.h"
 
+#include <cassert>
+
 #include "Poco/Net/HTTPRequest.h"
 #include "Poco/Net/HTTPResponse.h"
 #include "Poco/Net/HTTPMessage.h"
@@ -43,18 +45,18 @@ using Poco::Net::WebSocket;
 using Poco::URI;
 
 SIOClientImpl::SIOClientImpl(URI uri)
-		: _logger(Logger::get("SIOClientLog"))
-		, _buffer(nullptr)
-		, _buffer_size(0)
-		, _port(uri.getPort())
-		, _host(uri.getHost())
+		: SIOClientImpl(uri, Logger::get("SIOClientLog"))
 {
-	_uri = uri;
+}
+
+SIOClientImpl::SIOClientImpl(URI uri, Logger& logger)
+		: _logger(logger)
+		, _uri(uri)
+{
 }
 
 SIOClientImpl::~SIOClientImpl(void)
 {
-
 	_thread.join();
 	disconnect("");
 
@@ -62,19 +64,6 @@ SIOClientImpl::~SIOClientImpl(void)
 	{
 		_webSocket->shutdown();
 	}
-
-	delete (_heartbeatTimer);
-	delete (_session);
-	if (_buffer)
-	{
-		delete[] _buffer;
-		_buffer = nullptr;
-		_buffer_size = 0;
-	}
-
-	std::stringstream ss;
-	ss << _uri.getHost() << ":" << _uri.getPort() << _uri.getPath();
-	std::string uri = ss.str();
 }
 
 bool SIOClientImpl::init()
@@ -88,25 +77,22 @@ bool SIOClientImpl::init()
 	}
 
 	return false;
-
 }
 
 bool SIOClientImpl::handshake()
 {
-	UInt16 aport = _port;
 	if (_uri.getScheme() == "https")
 	{
 		return false;
 	}
 	else
 	{
-		_session = new HTTPClientSession(_host, aport);
+		_session = std::unique_ptr<HTTPClientSession>(new HTTPClientSession(_uri.getHost(), _uri.getPort()));
 	}
 	_session->setKeepAlive(false);
 	HTTPRequest req(HTTPRequest::HTTP_GET, "/?EIO=2&transport=websocket", HTTPMessage::HTTP_1_1);
 	req.set("Accept", "*/*");
 	req.setContentType("text/plain");
-	req.setHost(_host);
 
 	_logger.information("Send Handshake Post request...:");
 	HTTPResponse res;
@@ -152,8 +138,8 @@ bool SIOClientImpl::handshake()
 
 		//_sid = msg->get("sid").toString();
 		_sid = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6Im15VGVzdCIsIm5hbWUiOiJBcHAtVGVzdCIsImNvbG9yIjoiIzg0Y2Q3MyIsImNsaWVudCI6ImVzcG9ydGNoYXQiLCJpYXQiOjE0ODI0ODg2MDEsImV4cCI6MTQ4MjU3NTAwMX0.yiWJF4geJ9k9H3v5qGLZ_pBOhn5JjyZsCdxzT812riU";
-		_heartbeat_timeout = 5;//atoi(msg->get("pingInterval").toString().c_str())/1000;
-		_timeout = 10;//atoi(msg->get("pingTimeout").toString().c_str())/1000;
+		//_heartbeat_timeout = atoi(msg->get("pingInterval").toString().c_str())/1000;
+		//_timeout = atoi(msg->get("pingTimeout").toString().c_str())/1000;
 	}
 	else
 	{
@@ -165,8 +151,8 @@ bool SIOClientImpl::handshake()
 		_logger.information("timeout: %s", msg[2]);
 		_logger.information("transports: %s", msg[3]);
 		_sid = msg[0];
-		_heartbeat_timeout = atoi(msg[1].c_str());
-		_timeout = atoi(msg[2].c_str());
+		//_heartbeat_timeout = atoi(msg[1].c_str());
+		//_timeout = atoi(msg[2].c_str());
 	}
 
 	return true;
@@ -174,7 +160,6 @@ bool SIOClientImpl::handshake()
 
 bool SIOClientImpl::openSocket()
 {
-	UInt16 aport = _port;
 	HTTPResponse res;
 	HTTPRequest req;
 	req.setMethod(HTTPRequest::HTTP_GET);
@@ -230,8 +215,7 @@ bool SIOClientImpl::openSocket()
 
 	_connected = true;//FIXME on 1.0.x the server acknowledge the connection
 
-	int hbInterval = this->_heartbeat_timeout * .75 * 1000;
-	_heartbeatTimer = new Timer(hbInterval, hbInterval);
+	_heartbeatTimer = std::unique_ptr<Timer>(new Timer(_pingInterval.count(), _pingInterval.count()));
 	TimerCallback<SIOClientImpl> heartbeat(*this, &SIOClientImpl::heartbeat);
 	_heartbeatTimer->start(heartbeat);
 
@@ -388,16 +372,15 @@ void SIOClientImpl::send(SocketIOPacket* packet)
 
 bool SIOClientImpl::receive()
 {
-	if (!_buffer)
+	if (_buffer.size() != _webSocket->getReceiveBufferSize())
 	{
-		int rcv_size = _webSocket->getReceiveBufferSize();
-		_buffer = new char[rcv_size];
-		_buffer_size = rcv_size;
+		_buffer.resize(_webSocket->getReceiveBufferSize());
 	}
+	assert(_buffer.empty() == false);
 	int flags;
 	int n;
 
-	n = _webSocket->receiveFrame(_buffer, _buffer_size, flags);
+	n = _webSocket->receiveFrame(&_buffer[0], static_cast<int>(_buffer.size()), flags);
 	_logger.information("I received something...bytes received: %d ", n);
 
 	SocketIOPacket* packetOut;
@@ -537,8 +520,8 @@ bool SIOClientImpl::receive()
 					_logger.information("timeout: %s", msg->get("pingTimeout").toString());
 
 					_sid = msg->get("sid").toString();
-					_heartbeat_timeout = atoi(msg->get("pingInterval").toString().c_str()) / 1000;
-					_timeout = atoi(msg->get("pingTimeout").toString().c_str()) / 1000;
+					_pingInterval = std::chrono::milliseconds{msg->get("pingInterval").convert<std::size_t>()};
+					_pingTimeout = std::chrono::milliseconds{msg->get("pingTimeout").convert<std::size_t>()};
 
 					break;
 				}
