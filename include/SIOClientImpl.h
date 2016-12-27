@@ -64,7 +64,7 @@ private:
 	SocketIOPacket::SocketIOVersion _version;
 
 	HTTPClientSession* _session;
-	std::unique_ptr<Poco::Net::WebSocket> _ws;
+	std::unique_ptr<Poco::Net::WebSocket> _webSocket;
 	Timer* _heartbeatTimer;
 	Logger* _logger;
 	Thread _thread;

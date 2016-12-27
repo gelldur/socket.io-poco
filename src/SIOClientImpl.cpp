@@ -63,9 +63,9 @@ SIOClientImpl::~SIOClientImpl(void)
 	_thread.join();
 	disconnect("");
 
-	if (_ws)
+	if (_webSocket)
 	{
-		_ws->shutdown();
+		_webSocket->shutdown();
 	}
 
 	delete (_heartbeatTimer);
@@ -208,20 +208,20 @@ bool SIOClientImpl::openSocket()
 	{
 		try
 		{
-			_ws = std::unique_ptr<WebSocket>(new WebSocket(*_session, req, res));
+			_webSocket = std::unique_ptr<WebSocket>(new WebSocket(*_session, req, res));
 		}
 		catch (NetException& ne)
 		{
 
 			_logger->warning("Exception when creating websocket %s : %s - %s", ne.displayText(), ne.code(), ne.what());
-			if (_ws)
+			if (_webSocket)
 			{
-				_ws.reset();
+				_webSocket.reset();
 			}
 			Poco::Thread::sleep(100);
 		}
-	} while (_ws == nullptr && now.elapsed() < 1000000);
-	if (_ws == nullptr)
+	} while (_webSocket == nullptr && now.elapsed() < 1000000);
+	if (_webSocket == nullptr)
 	{
 		_logger->error("Impossible to create websocket");
 		return _connected;
@@ -230,7 +230,7 @@ bool SIOClientImpl::openSocket()
 	if (_version == SocketIOPacket::V10x)
 	{
 		std::string s = "5";//That's a ping https://github.com/Automattic/engine.io-parser/blob/1b8e077b2218f4947a69f5ad18be2a512ed54e93/lib/index.js#L21
-		_ws->sendFrame(s.data(), s.size());
+		_webSocket->sendFrame(s.data(), s.size());
 	}
 
 	_logger->information("WebSocket Created and initialised");
@@ -272,7 +272,7 @@ void SIOClientImpl::disconnect(std::string endpoint)
 	{
 		s = "41" + endpoint;
 	}
-	_ws->sendFrame(s.data(), s.size());
+	_webSocket->sendFrame(s.data(), s.size());
 	if (endpoint == "")
 	{
 		_logger->information("Disconnect");
@@ -282,7 +282,7 @@ void SIOClientImpl::disconnect(std::string endpoint)
 
 	if (_version == SocketIOPacket::V10x)
 	{
-		_ws->shutdown();
+		_webSocket->shutdown();
 	}
 }
 
@@ -298,7 +298,7 @@ void SIOClientImpl::connectToEndpoint(std::string endpoint)
 	//			s = "41" + endpoint;
 	//			break;
 	//		}
-	//	_ws->sendFrame(s.data(), s.size());
+	//	_webSocket->sendFrame(s.data(), s.size());
 	_logger->information("heartbeat called");
 	SocketIOPacket* packet = SocketIOPacket::createPacketWithType("connect", _version);
 	packet->setEndpoint(endpoint);
@@ -321,7 +321,7 @@ void SIOClientImpl::heartbeat(Poco::Timer& timer)
 	//		s = "2probe";
 	//		break;
 	//	}
-	//	_ws->sendFrame(s.data(), s.size());
+	//	_webSocket->sendFrame(s.data(), s.size());
 }
 
 void SIOClientImpl::run()
@@ -385,7 +385,7 @@ void SIOClientImpl::send(SocketIOPacket* packet)
 	if (_connected)
 	{
 		_logger->information("-->SEND:%s", req);
-		_ws->sendFrame(req.data(), req.size());
+		_webSocket->sendFrame(req.data(), req.size());
 	}
 	else
 	{
@@ -397,14 +397,14 @@ bool SIOClientImpl::receive()
 {
 	if (!_buffer)
 	{
-		int rcv_size = _ws->getReceiveBufferSize();
+		int rcv_size = _webSocket->getReceiveBufferSize();
 		_buffer = new char[rcv_size];
 		_buffer_size = rcv_size;
 	}
 	int flags;
 	int n;
 
-	n = _ws->receiveFrame(_buffer, _buffer_size, flags);
+	n = _webSocket->receiveFrame(_buffer, _buffer_size, flags);
 	_logger->information("I received something...bytes received: %d ", n);
 
 	SocketIOPacket* packetOut;
@@ -555,14 +555,14 @@ bool SIOClientImpl::receive()
 				case 2:
 					_logger->information("Ping received, send pong");
 					data = "3" + data;
-					_ws->sendFrame(data.c_str(), data.size());
+					_webSocket->sendFrame(data.c_str(), data.size());
 					break;
 				case 3:
 					_logger->information("Pong received");
 					if (data == "probe")
 					{
 						_logger->information("Request Update");
-						_ws->sendFrame("5", 1);
+						_webSocket->sendFrame("5", 1);
 					}
 					break;
 				case 4:
