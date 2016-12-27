@@ -11,15 +11,6 @@ using Poco::JSON::Array;
 
 class SIOClient
 {
-private:
-	std::shared_ptr<SIOClientImpl> _socket;
-	std::unique_ptr<SIOEventRegistry> _registry;
-	std::unique_ptr<Poco::NotificationCenter> _nCenter;
-	std::unique_ptr<SIONotificationHandler> _sioHandler;
-
-	std::string _uri;
-	std::string _endpoint;
-
 public:
 	SIOClient(std::string uri, std::string endpoint);
 
@@ -36,6 +27,15 @@ public:
 	void on(const char* name, SIOEventTarget* target, callback c);
 
 	void fireEvent(const char* name, Array::Ptr args);
+
+private:
+	std::shared_ptr<SIOClientImpl> _socket;
+	std::unique_ptr<SIOEventRegistry> _registry;
+	std::unique_ptr<Poco::NotificationCenter> _nCenter;
+	std::unique_ptr<SIONotificationHandler> _sioHandler;
+
+	std::string _uri;
+	std::string _endpoint;
 };
 
 #endif
