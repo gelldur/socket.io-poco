@@ -32,14 +32,15 @@ using Poco::ThreadTarget;
 class SIOClientImpl : public Poco::Runnable
 {
 public:
+	SIOClientImpl();
+	SIOClientImpl(Poco::URI uri);
+	~SIOClientImpl(void);
+
 	bool handshake();
 	bool openSocket();
 	bool init();
 
-	void release();
-	void addref();
-
-	static SIOClientImpl* connect(Poco::URI uri);
+	static SIOClientImpl* connect(SIOClient* client, Poco::URI uri);
 	void disconnect(std::string endpoint);
 	void connectToEndpoint(std::string endpoint);
 	void monitor();
@@ -54,11 +55,7 @@ public:
 	std::string getUri();
 
 private:
-
-	SIOClientImpl();
-	SIOClientImpl(Poco::URI uri);
-	~SIOClientImpl(void);
-
+	SIOClient* _client = nullptr;
 	std::string _sid;
 	int _heartbeat_timeout;
 	int _timeout;
@@ -74,12 +71,8 @@ private:
 	Logger* _logger;
 	Thread _thread;
 
-	int _refCount;
 	char* _buffer;
 	std::size_t _buffer_size;
-
-	//SIOEventRegistry* _registry;
-	//SIONotificationHandler *_sioHandler;
 };
 
 #endif

@@ -18,7 +18,6 @@
 #include "Poco/URI.h"
 
 #include "SIONotifications.h"
-#include "SIOClientRegistry.h"
 #include "SIOClient.h"
 
 using Poco::JSON::Parser;
@@ -54,7 +53,6 @@ SIOClientImpl::SIOClientImpl(URI uri)
 		, _buffer_size(0)
 		, _port(uri.getPort())
 		, _host(uri.getHost())
-		, _refCount(0)
 {
 	_uri = uri;
 	_ws = nullptr;
@@ -82,7 +80,6 @@ SIOClientImpl::~SIOClientImpl(void)
 	std::stringstream ss;
 	ss << _uri.getHost() << ":" << _uri.getPort() << _uri.getPath();
 	std::string uri = ss.str();
-	SIOClientRegistry::instance()->removeSocket(uri);
 }
 
 bool SIOClientImpl::init()
@@ -252,9 +249,10 @@ bool SIOClientImpl::openSocket()
 
 }
 
-SIOClientImpl* SIOClientImpl::connect(URI uri)
+SIOClientImpl* SIOClientImpl::connect(SIOClient* client, URI uri)
 {
 	SIOClientImpl* s = new SIOClientImpl(uri);
+	s->_client = client;
 
 	if (s && s->init())
 	{
@@ -436,8 +434,6 @@ bool SIOClientImpl::receive()
 			uri += endpoint;
 			_logger->information("URI:%s", uri);
 
-			c = SIOClientRegistry::instance()->getClient(uri);
-
 			std::string payload = "";
 			packetOut = SocketIOPacket::createPacketWithTypeIndex(control, _version);
 			packetOut->setEndpoint(endpoint);
@@ -584,7 +580,7 @@ bool SIOClientImpl::receive()
 						uri += endpoint;
 					}
 					packetOut->setEndpoint(endpoint);
-					c = SIOClientRegistry::instance()->getClient(uri);
+					c = _client;
 
 					control = atoi(&second);
 					_logger->information("Message code: [%i]", control);
@@ -678,17 +674,4 @@ bool SIOClientImpl::receive()
 
 	return true;
 
-}
-
-void SIOClientImpl::addref()
-{
-	_refCount++;
-}
-
-void SIOClientImpl::release()
-{
-	if (--_refCount == 0)
-	{
-		delete this;
-	}
 }
