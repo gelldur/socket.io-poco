@@ -30,7 +30,6 @@ using Poco::ThreadTarget;
 class SIOClientImpl : public Poco::Runnable
 {
 public:
-	SIOClientImpl();
 	SIOClientImpl(Poco::URI uri);
 	~SIOClientImpl(void);
 
@@ -66,7 +65,7 @@ private:
 	HTTPClientSession* _session;
 	std::unique_ptr<Poco::Net::WebSocket> _webSocket;
 	Timer* _heartbeatTimer;
-	Logger* _logger;
+	Logger& _logger;
 	Thread _thread;
 
 	char* _buffer;
