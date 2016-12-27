@@ -13,6 +13,7 @@
 #include <iostream>
 #include <sstream>
 #include <limits>
+#include <api/UrlBuilder.h>
 #include "Poco/StringTokenizer.h"
 #include "Poco/String.h"
 #include "Poco/Timer.h"
@@ -89,127 +90,96 @@ bool SIOClientImpl::handshake()
 	{
 		_session = std::unique_ptr<HTTPClientSession>(new HTTPClientSession(_uri.getHost(), _uri.getPort()));
 	}
-	_session->setKeepAlive(false);
-	HTTPRequest req(HTTPRequest::HTTP_GET, "/?EIO=2&transport=websocket", HTTPMessage::HTTP_1_1);
-	req.set("Accept", "*/*");
-	req.setContentType("text/plain");
+	_session->setKeepAlive(true);
+	Poco::URI uri{_uri};
+	uri.setPath("");//I'm not sure why i must remove it here
+	uri.addQueryParameter("EIO", "3");
+	uri.addQueryParameter("transport", "websocket");
 
-	_logger.information("Send Handshake Post request...:");
-	HTTPResponse res;
+	HTTPRequest request(HTTPRequest::HTTP_GET, uri.toString(), HTTPMessage::HTTP_1_1);
+	request.set("Accept", "*/*");
+	request.setContentType("text/plain");
+
+	HTTPResponse response;
 	std::string temp;
 
 	try
 	{
-		_session->sendRequest(req);
-		std::istream& rs = _session->receiveResponse(res);
+		_logger.information("Send Handshake Post request...:");
+		_session->sendRequest(request);
+
 		_logger.information("Receive Handshake Post request...");
+		std::istream& rs = _session->receiveResponse(response);
 		StreamCopier::copyToString(rs, temp);
-		if (res.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
+		if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
 		{
-			_logger.error("%s %s", res.getStatus(), res.getReason());
+			_logger.error("%d %s", (int) response.getStatus(), response.getReason());
 			_logger.error("response: %s\n", temp);
 			return false;
 		}
-
 	}
-	catch (std::exception& e)
+	catch (const Poco::Net::NetException& ex)
 	{
+		std::stringstream stream;
+		request.write(stream);
+		_logger.warning("Request:%s", stream.str());
+
+		stream.str("");
+		response.write(stream);
+		_logger.warning("Response:%s", stream.str());
+
+		_logger.warning("Exception when creating websocket:%s\ncode:%d\nwhat:%s", ex.displayText()
+						, ex.code()
+						, std::string{ex.what()});
 		return false;
 	}
 
-	_logger.information("%s %s", res.getStatus(), res.getReason());
+	_logger.information("%d %s", (int) response.getStatus(), response.getReason());
 	_logger.information("response: %s\n", temp);
-
-	if (temp.at(temp.size() - 1) == '}')
-	{
-		_version = SocketIOPacket::V10x;
-		//�0{"sid":"HBlgZ7rOi8Y3QrUaAAAB","upgrades":["websocket"],"pingInterval":25000,"pingTimeout":60000}
-		int a = temp.find('{');
-		temp = temp.substr(a, temp.size() - a);
-		temp = temp.substr(0, temp.find('}', temp.size() - 5) + 1);
-		//		ParseHandler::Ptr pHandler = new ParseHandler(false);
-		//		Parser parser(pHandler);
-		//		Var result = parser.parse(temp);
-		//		Object::Ptr msg = result.extract<Object::Ptr>();
-
-		//_logger.information("session: %s",msg->get("sid").toString());
-		//_logger.information("heartbeat: %s",msg->get("pingInterval").toString());
-		//_logger.information("timeout: %s",msg->get("pingTimeout").toString());
-
-		//_sid = msg->get("sid").toString();
-		_sid = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6Im15VGVzdCIsIm5hbWUiOiJBcHAtVGVzdCIsImNvbG9yIjoiIzg0Y2Q3MyIsImNsaWVudCI6ImVzcG9ydGNoYXQiLCJpYXQiOjE0ODI0ODg2MDEsImV4cCI6MTQ4MjU3NTAwMX0.yiWJF4geJ9k9H3v5qGLZ_pBOhn5JjyZsCdxzT812riU";
-		//_heartbeat_timeout = atoi(msg->get("pingInterval").toString().c_str())/1000;
-		//_timeout = atoi(msg->get("pingTimeout").toString().c_str())/1000;
-	}
-	else
-	{
-		_version = SocketIOPacket::V09x;
-		StringTokenizer msg(temp, ":");
-		//3GYzE9md2Ig-lm3cf8Rv:60:60:websocket,htmlfile,xhr-polling,jsonp-polling
-		_logger.information("session: %s", msg[0]);
-		_logger.information("heartbeat: %s", msg[1]);
-		_logger.information("timeout: %s", msg[2]);
-		_logger.information("transports: %s", msg[3]);
-		_sid = msg[0];
-		//_heartbeat_timeout = atoi(msg[1].c_str());
-		//_timeout = atoi(msg[2].c_str());
-	}
 
 	return true;
 }
 
 bool SIOClientImpl::openSocket()
 {
-	HTTPResponse res;
-	HTTPRequest req;
-	req.setMethod(HTTPRequest::HTTP_GET);
-	req.setVersion(HTTPMessage::HTTP_1_1);
-	switch (_version)
+	Poco::URI uri{_uri};
+	uri.setScheme("");//I'm not sure why we must remove it
+	uri.addQueryParameter("EIO", "3");
+	uri.addQueryParameter("transport", "websocket");
+
+	HTTPRequest request{HTTPRequest::HTTP_GET, uri.toString(), HTTPMessage::HTTP_1_1};
+	HTTPResponse response;
+
+	try
 	{
-		case SocketIOPacket::V09x:
-		{
-			req.setURI("/socket.io/1/websocket/" + _sid);
-		}
-			break;
-		case SocketIOPacket::V10x:
-		{
-			req.setURI(
-					"/api/chat/?EIO=3&transport=websocket&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6Im15VGVzdCIsIm5hbWUiOiJBcHAtVGVzdCIsImNvbG9yIjoiIzg0Y2Q3MyIsImNsaWVudCI6ImVzcG9ydGNoYXQiLCJpYXQiOjE0ODI0ODg2MDEsImV4cCI6MTQ4MjU3NTAwMX0.yiWJF4geJ9k9H3v5qGLZ_pBOhn5JjyZsCdxzT812riU");
-		}
-			break;
+		_webSocket = std::unique_ptr<WebSocket>(new WebSocket(*_session, request, response));
+	}
+	catch (const Poco::Net::NetException& ex)
+	{
+		std::stringstream stream;
+		request.write(stream);
+		_logger.warning("Request:%s", stream.str());
+
+		stream.str("");
+		response.write(stream);
+		_logger.warning("Response:%s", stream.str());
+
+		_logger.warning("Exception when creating websocket:%s\ncode:%d\nwhat:%s", ex.displayText()
+						, ex.code()
+						, std::string{ex.what()});
+
+		_webSocket.reset();
 	}
 
-	_logger.information("WebSocket To Create for %s", _sid);
-	Poco::Timestamp now;
-	now.update();
-	do
-	{
-		try
-		{
-			_webSocket = std::unique_ptr<WebSocket>(new WebSocket(*_session, req, res));
-		}
-		catch (NetException& ne)
-		{
-
-			_logger.warning("Exception when creating websocket %s : %s - %s", ne.displayText(), ne.code(), ne.what());
-			if (_webSocket)
-			{
-				_webSocket.reset();
-			}
-			Poco::Thread::sleep(100);
-		}
-	} while (_webSocket == nullptr && now.elapsed() < 1000000);
 	if (_webSocket == nullptr)
 	{
 		_logger.error("Impossible to create websocket");
-		return _connected;
+		return false;
 	}
 
-	if (_version == SocketIOPacket::V10x)
-	{
-		std::string s = "5";//That's a ping https://github.com/Automattic/engine.io-parser/blob/1b8e077b2218f4947a69f5ad18be2a512ed54e93/lib/index.js#L21
-		_webSocket->sendFrame(s.data(), s.size());
-	}
+	_logger.information("Send ping");
+	std::string s = "5";//That's a ping https://github.com/Automattic/engine.io-parser/blob/1b8e077b2218f4947a69f5ad18be2a512ed54e93/lib/index.js#L21
+	_webSocket->sendFrame(s.data(), s.size());
 
 	_logger.information("WebSocket Created and initialised");
 
@@ -238,17 +208,10 @@ SIOClientImpl* SIOClientImpl::connect(SIOClient* client, URI uri)
 	return nullptr;
 }
 
-void SIOClientImpl::disconnect(std::string endpoint)
+void SIOClientImpl::disconnect(const std::string& endpoint)
 {
 	std::string s;
-	if (_version == SocketIOPacket::V09x)
-	{
-		s = "0::" + endpoint;
-	}
-	else
-	{
-		s = "41" + endpoint;
-	}
+	s = "41" + endpoint;
 	_webSocket->sendFrame(s.data(), s.size());
 	if (endpoint == "")
 	{
@@ -257,55 +220,19 @@ void SIOClientImpl::disconnect(std::string endpoint)
 		_connected = false;
 	}
 
-	if (_version == SocketIOPacket::V10x)
-	{
-		_webSocket->shutdown();
-	}
-}
-
-void SIOClientImpl::connectToEndpoint(std::string endpoint)
-{
-	//	std::string s;
-	//	switch(_version)
-	//		{
-	//		case SocketIOPacket::V09x:
-	//			s = "1::" + endpoint;
-	//			break;
-	//		case SocketIOPacket::V10x:
-	//			s = "41" + endpoint;
-	//			break;
-	//		}
-	//	_webSocket->sendFrame(s.data(), s.size());
-	_logger.information("heartbeat called");
-	SocketIOPacket* packet = SocketIOPacket::createPacketWithType("connect", _version);
-	packet->setEndpoint(endpoint);
-	this->send(packet);
-
+	_webSocket->shutdown();
 }
 
 void SIOClientImpl::heartbeat(Poco::Timer& timer)
 {
 	_logger.information("heartbeat called");
-	SocketIOPacket* packet = SocketIOPacket::createPacketWithType("heartbeat", _version);
-	this->send(packet);
-	//	std::string s;
-	//	switch(_version)
-	//	{
-	//	case SocketIOPacket::V09x:
-	//		s = "2::";
-	//		break;
-	//	case SocketIOPacket::V10x:
-	//		s = "2probe";
-	//		break;
-	//	}
-	//	_webSocket->sendFrame(s.data(), s.size());
+	SocketIOPacket* packet = SocketIOPacket::createPacketWithType("heartbeat", SocketIOPacket::SocketIOVersion::V10x);
+	send(packet);
 }
 
 void SIOClientImpl::run()
 {
-
 	monitor();
-
 }
 
 void SIOClientImpl::monitor()
@@ -316,40 +243,30 @@ void SIOClientImpl::monitor()
 	} while (_connected);
 }
 
-void SIOClientImpl::send(std::string endpoint, std::string s)
+void SIOClientImpl::send(const std::string& endpoint, const std::string& s)
 {
-	switch (_version)
-	{
-		case SocketIOPacket::V09x:
-		{
-			_logger.information("Sending Message");
-			SocketIOPacket* packet = SocketIOPacket::createPacketWithType("message", _version);
-			packet->setEndpoint(endpoint);
-			packet->addData(s);
-			this->send(packet);
-		}
-			break;
-		case SocketIOPacket::V10x:
-			this->emit(endpoint, "message", s);
-			break;
-	}
+	emit(endpoint, "message", s);
 }
 
-void SIOClientImpl::emit(std::string endpoint, std::string eventname, Poco::JSON::Object::Ptr args)
+void SIOClientImpl::emit(const std::string& endpoint
+		, const std::string& eventname
+		, const std::vector<Poco::Dynamic::Var>& args)
 {
 	_logger.information("Emitting event \"%s\"", eventname);
-	SocketIOPacket* packet = SocketIOPacket::createPacketWithType("event", _version);
+	SocketIOPacket* packet = SocketIOPacket::createPacketWithType("event", SocketIOPacket::SocketIOVersion::V10x);
 	packet->setEndpoint(endpoint);
 	packet->setEvent(eventname);
-	packet->addData(args);
+	for (const auto& element : args)
+	{
+		packet->addData(element);
+	}
 	this->send(packet);
+}
 
-} //void SIOClientImpl::emit(std::string endpoint, std::string eventname, Poco::JSON::Object::Ptr args)
-
-void SIOClientImpl::emit(std::string endpoint, std::string eventname, std::string args)
+void SIOClientImpl::emit(const std::string& endpoint, const std::string& eventname, const std::string& args)
 {
 	_logger.information("Emitting event \"%s\"", eventname);
-	SocketIOPacket* packet = SocketIOPacket::createPacketWithType("event", _version);
+	SocketIOPacket* packet = SocketIOPacket::createPacketWithType("event", SocketIOPacket::SocketIOVersion::V10x);
 	packet->setEndpoint(endpoint);
 	packet->setEvent(eventname);
 	packet->addData(args);
@@ -370,283 +287,145 @@ void SIOClientImpl::send(SocketIOPacket* packet)
 	}
 }
 
+enum PacketType : char
+{
+	OPEN = '0', CLOSE = '1', PING = '2', PONG = '3', MESSAGE = '4', UPGRADE = '5', NOOP = '6'
+};
+
 bool SIOClientImpl::receive()
 {
-	if (_buffer.size() != _webSocket->getReceiveBufferSize())
+	if (_buffer.size() < _webSocket->getReceiveBufferSize())
 	{
 		_buffer.resize(_webSocket->getReceiveBufferSize());
 	}
 	assert(_buffer.empty() == false);
-	int flags;
-	int n;
 
-	n = _webSocket->receiveFrame(&_buffer[0], static_cast<int>(_buffer.size()), flags);
-	_logger.information("I received something...bytes received: %d ", n);
-
-	SocketIOPacket* packetOut;
-
-	std::stringstream s;
-	for (int i = 0; i < n; i++)
+	int flags = 0;
+	int bytesReceived = _webSocket->receiveFrame(&_buffer[0], static_cast<int>(_buffer.size()), flags);
+	_buffer.resize(bytesReceived);
+	if (bytesReceived <= 0)
 	{
-		s << _buffer[i];
+		//Shutdown connection or closed
+		_logger.information("Shutdown connection or closed by host");
+		disconnect("");
+		return false;
 	}
-	SIOClient* c;
-	std::stringstream suri;
-	suri << _uri.getHost() << ":" << _uri.getPort() << _uri.getPath();
-	std::string uri = suri.str();
+	_logger.information("Bytes received: %d ", bytesReceived);
 
-	switch (_version)
+	const char control = _buffer.at(0);
+
+	_logger.information("Buffer received:");
+	_logger.information("%s", std::string{_buffer.begin(), _buffer.end()});
+	_logger.information("Control code: %c", control);
+	switch (control)
 	{
-		case SocketIOPacket::V09x:
+		case PacketType::OPEN:
 		{
-			const char first = s.str().at(0);
-			int control = atoi(&first);
-			_logger.information("buffer received: [%s]\tControl code: [%i]", s.str(), control);
-			StringTokenizer st(s.str(), ":");
-			std::string endpoint = st[2];
+			auto foundBegin = std::find(_buffer.begin(), _buffer.end(), '{');
+			assert(foundBegin != _buffer.end());
+			auto foundEnd = std::find(foundBegin, _buffer.end(), '}');
+			assert(foundEnd != _buffer.end());
+			++foundEnd;
 
-			std::stringstream ss;
-			uri += endpoint;
-			_logger.information("URI:%s", uri);
+			Parser parser;
+			const auto& result = parser.parse(std::string{foundBegin, foundEnd});
+			const auto& message = result.extract<Object::Ptr>();
 
-			std::string payload = "";
-			packetOut = SocketIOPacket::createPacketWithTypeIndex(control, _version);
-			packetOut->setEndpoint(endpoint);
+			_pingInterval = std::chrono::milliseconds{message->get("pingInterval").convert<std::size_t>()};
+			_pingTimeout = std::chrono::milliseconds{message->get("pingTimeout").convert<std::size_t>()};
 
+			break;
+		}
+		case PacketType::CLOSE:
+			_logger.information("Host want to close");
+			disconnect("");
+			break;
+		case PacketType::PING:
+			_logger.information("Ping received, send pong");
+			_buffer.insert(_buffer.begin(), PacketType::PONG);
+			_webSocket->sendFrame(&_buffer[0], _buffer.size());
+			break;
+		case PacketType::PONG:
+		{
+			_logger.information("Pong received");
+			std::string data{_buffer.begin(), _buffer.end()};
+			if (data.find("probe") != std::string::npos)
+			{
+				_logger.information("Request Update");
+				sendFrame({1, PacketType::UPGRADE});
+			}
+			break;
+		}
+		case PacketType::MESSAGE:
+		{
+			const char control = _buffer.at(1);
+			_logger.information("Message code: [%c]", control);
 			switch (control)
 			{
-				case 0:
+				case PacketType::OPEN:
+					_logger.information("Socket Connected");
+					_connected = true;
+					break;
+				case PacketType::CLOSE:
 					_logger.information("Socket Disconnected");
+					disconnect("");
 					break;
-				case 1:
-					_logger.information("Connected to endpoint: %s", st[2]);
-					break;
-				case 2:
-					_logger.information("Heartbeat received");
-					break;
-				case 3:
-					if (st.count() >= 3)
-					{
-						for (int i = 3; i < st.count(); i++)
-						{//merge piece that have been separated because they contain ':'
-							if (i != 3)
-							{
-								payload += ":";
-							}
-							payload += st[i];
-						}
-						_logger.information("Message received(%s)", payload);
-					}
-					packetOut->setEvent("message");
-					packetOut->addData(payload);
-					c->getNCenter()->postNotification(new SIOEvent(c, packetOut));
-					break;
-				case 4:
-					if (st.count() >= 3)
-					{
-						for (int i = 3; i < st.count(); i++)
-						{//merge piece that have been separated because they contain ':'
-							if (i != 3)
-							{
-								payload += ":";
-							}
-							payload += st[i];
-						}
-						_logger.information("JSON Message Received(%s)", payload);
-					}
-					packetOut->setEvent("message");
-					packetOut->addData(payload);
-					c->getNCenter()->postNotification(new SIOEvent(c, packetOut));
-					break;
-				case 5:
+				case PacketType::PING:
 				{
-					if (st.count() >= 3)
+					auto foundBegin = std::find(_buffer.begin(), _buffer.end(), '[');
+					assert(foundBegin != _buffer.end());
+					auto foundEnd = std::find(foundBegin, _buffer.end(), ']');
+					assert(foundEnd != _buffer.end());
+					++foundEnd;
+
+					Parser parser;
+					const auto& result = parser.parse(std::string{foundBegin, foundEnd});
+					const auto& message = result.extract<Poco::JSON::Array::Ptr>();
+
+					auto packetOut = std::unique_ptr<SocketIOPacket>(SocketIOPacket::createPacketWithType("event"
+																										  , SocketIOPacket::SocketIOVersion::V10x));
+					packetOut->setEvent(message->get(0).toString());
+					for (int i = 1; i < message->size(); ++i)
 					{
-						for (int i = 3; i < st.count(); i++)
-						{//merge piece that have been separated because they contain ':'
-							if (i != 3)
-							{
-								payload += ":";
-							}
-							payload += st[i];
+						if (message->isArray(i))
+						{
+							packetOut->addData(message->getArray(i));
 						}
-						_logger.information("Event Dispatched (%s)", payload);
-						ParseHandler::Ptr pHandler = new ParseHandler(false);
-						Parser parser(pHandler);
-						Var result = parser.parse(payload);
-						Object::Ptr msg = result.extract<Object::Ptr>();
-						packetOut->setEvent(msg->get("name"));
-						packetOut->addData(msg->getArray("args"));
-						c->getNCenter()->postNotification(new SIOEvent(c, packetOut));
+						else
+						{
+							packetOut->addData(message->get(i));
+						}
 					}
+					_client->getNCenter()->postNotification(new SIOEvent(_client, std::move(packetOut)));
 				}
 					break;
-				case 6:
+				case PacketType::PONG:
 					_logger.information("Message Ack");
 					break;
-				case 7:
+				case PacketType::MESSAGE:
 					_logger.information("Error");
 					break;
-				case 8:
-					_logger.information("Noop");
+				case PacketType::UPGRADE:
+					_logger.information("Binary Event");
+					break;
+				case PacketType::NOOP:
+					_logger.information("Binary Ack");
 					break;
 			}
 		}
 			break;
-
-		case SocketIOPacket::V10x:
-		{
-			const char first = s.str().at(0);
-			std::string data = s.str().substr(1);
-			int control = atoi(&first);
-			_logger.information("Buffer received: [%s]\tControl code: [%i]", s.str(), control);
-			switch (control)
-			{
-				case 0:
-				{
-					_logger.information("Not supposed to receive control 0 for websocket");
-					_logger.warning("That's not good");
-
-					int a = data.find('{');
-					std::string temp = data.substr(a, data.size() - a);
-					temp = temp.substr(0, temp.find('}', temp.size() - 5) + 1);
-					ParseHandler::Ptr pHandler = new ParseHandler(false);
-					Parser parser(pHandler);
-					Var result = parser.parse(temp);
-					Object::Ptr msg = result.extract<Object::Ptr>();
-
-					_logger.information("session: %s", msg->get("sid").toString());
-					_logger.information("heartbeat: %s", msg->get("pingInterval").toString());
-					_logger.information("timeout: %s", msg->get("pingTimeout").toString());
-
-					_sid = msg->get("sid").toString();
-					_pingInterval = std::chrono::milliseconds{msg->get("pingInterval").convert<std::size_t>()};
-					_pingTimeout = std::chrono::milliseconds{msg->get("pingTimeout").convert<std::size_t>()};
-
-					break;
-				}
-				case 1:
-					_logger.information("Not supposed to receive control 1 for websocket");
-					break;
-				case 2:
-					_logger.information("Ping received, send pong");
-					data = "3" + data;
-					_webSocket->sendFrame(data.c_str(), data.size());
-					break;
-				case 3:
-					_logger.information("Pong received");
-					if (data == "probe")
-					{
-						_logger.information("Request Update");
-						_webSocket->sendFrame("5", 1);
-					}
-					break;
-				case 4:
-				{
-					packetOut = SocketIOPacket::createPacketWithType("event", _version);
-					const char second = data.at(0);
-					data = data.substr(1);
-					int nendpoint = data.find("[");
-					std::string endpoint = "";
-					if (nendpoint != std::string::npos)
-					{
-						endpoint += data.substr(0, nendpoint);
-						data = data.substr(nendpoint);
-						uri += endpoint;
-					}
-					packetOut->setEndpoint(endpoint);
-					c = _client;
-
-					control = atoi(&second);
-					_logger.information("Message code: [%i]", control);
-					switch (control)
-					{
-						case 0:
-							_logger.information("Socket Connected");
-							_connected = true;
-							break;
-						case 1:
-							_logger.information("Socket Disconnected");
-							//this->disconnect("/");//FIXME the server is telling us it is disconnecting
-							break;
-						case 2:
-						{
-							_logger.information("Event Dispatched (%s)", data);
-							ParseHandler::Ptr pHandler = new ParseHandler(false);
-							Parser parser(pHandler);
-							Var result = parser.parse(data);
-							Array::Ptr msg = result.extract<Array::Ptr>();
-							packetOut->setEvent(msg->get(0));
-							for (int i = 1; i < msg->size(); ++i)
-							{
-								packetOut->addData(msg->get(i).toString());
-							}
-							c->getNCenter()->postNotification(new SIOEvent(c, packetOut));
-
-
-							//							//42["message","{\"type\":\"redirect\",\"url\":\"/logout\",\"rid\":\"test\",\"info\":\"Internal error: could not get csInfo.\",\"action\":\"reject\"}"]
-							//							size_t start_pos = 0;
-							//							std::string from = "\\\"", to = "\"";
-							//							while((start_pos = data.find(from, start_pos)) != std::string::npos)
-							//							{
-							//								data.replace(start_pos, from.length(), to);
-							//								start_pos += to.length();
-							//							}
-							//							std::string eventtype;
-							//							std::string databody;
-							//							std::string endpoint;
-							//							_logger.information("Parse this: %s",data);
-							//							int one,two;
-							//							one = data.find("\"")+1;
-							//							two = data.find("\"",one);
-							//							eventtype = data.substr(one,two-one);
-							//							one = data.find("{");
-							//							two = data.find_last_of("}")+1;
-							//							databody = data.substr(one,two-one);
-							//
-							//
-							//							uri += endpoint;
-							//							c = SIOClientRegistry::instance()->getClient(uri);
-							//
-							//							_logger.information("Type event is: %s\nData:%s",eventtype,databody);
-							//							//if message
-							//							if(eventtype == "message")
-							//								c->getNCenter()->postNotification(new SIOMessage(c,databody));
-							//							else// need to find event
-							//							{
-							//								std::string eventPayload = "{\"name\":\""+eventtype+"\",\"args\":["+databody+"]}";
-							//								//{"name":"event","args":[{"type":"emit Without backslash"}]}
-							//								c->getNCenter()->postNotification(new SIOEvent(c, eventPayload));
-							//							}
-
-						}
-							break;
-						case 3:
-							_logger.information("Message Ack");
-							break;
-						case 4:
-							_logger.information("Error");
-							break;
-						case 5:
-							_logger.information("Binary Event");
-							break;
-						case 6:
-							_logger.information("Binary Ack");
-							break;
-					}
-				}
-					break;
-				case 5:
-					_logger.information("Upgrade required");
-					break;
-				case 6:
-					_logger.information("Noop");
-					break;
-			}
-		}
+		case PacketType::UPGRADE:
+			_logger.information("Upgrade required");
+			break;
+		case PacketType::NOOP:
+			_logger.information("Noop");
 			break;
 	}
 
 	return true;
+}
 
+void SIOClientImpl::sendFrame(const std::string& data)
+{
+	_webSocket->sendFrame(data.c_str(), data.size());
 }

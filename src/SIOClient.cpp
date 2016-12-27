@@ -4,22 +4,19 @@
 
 using Poco::URI;
 
-SIOClient::SIOClient(std::string uri, std::string endpoint)
-		: _nCenter{new NotificationCenter{}}
+SIOClient::SIOClient(const Poco::URI& uri)
+		: _uri{uri}
+		, _nCenter{new NotificationCenter{}}
 		, _sioHandler{new SIONotificationHandler(_nCenter.get())}
-		, _uri{uri}
-		, _endpoint{endpoint}
 {
 }
 
 bool SIOClient::connect()
 {
 	//check if connection to endpoint exists
-	URI tmp_uri(_uri);
-
 	if (_socket == nullptr)
 	{
-		_socket = std::shared_ptr<SIOClientImpl>(SIOClientImpl::connect(this, tmp_uri));
+		_socket = std::shared_ptr<SIOClientImpl>(SIOClientImpl::connect(this, _uri));
 
 		if (_socket == nullptr)
 		{
@@ -27,22 +24,12 @@ bool SIOClient::connect()
 		}
 	}
 
-	if (tmp_uri.getPath() != "")
-	{
-		_socket->connectToEndpoint(tmp_uri.getPath());
-	}
-
 	return true;
 }
 
 void SIOClient::disconnect()
 {
-	_socket->disconnect(_endpoint);
-}
-
-std::string SIOClient::getUri()
-{
-	return _uri;
+	_socket->disconnect("");
 }
 
 NotificationCenter* SIOClient::getNCenter()
@@ -67,15 +54,15 @@ void SIOClient::fireEvent(const std::string& name, Array::Ptr args)
 
 void SIOClient::send(std::string s)
 {
-	_socket->send(_endpoint, s);
+	_socket->send("", s);
 }
 
-void SIOClient::emit(std::string eventname, Poco::JSON::Object::Ptr args)
+void SIOClient::emit(const std::string& eventname, const std::vector<Poco::Dynamic::Var>& args)
 {
-	_socket->emit(_endpoint, eventname, args);
+	_socket->emit("", eventname, args);
 }
 
 void SIOClient::emit(std::string eventname, std::string args)
 {
-	_socket->emit(_endpoint, eventname, args);
+	_socket->emit("", eventname, args);
 }

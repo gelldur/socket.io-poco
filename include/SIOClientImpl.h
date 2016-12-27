@@ -40,16 +40,17 @@ public:
 	bool init();
 
 	static SIOClientImpl* connect(SIOClient* client, Poco::URI uri);
-	void disconnect(std::string endpoint);
-	void connectToEndpoint(std::string endpoint);
+	void disconnect(const std::string& endpoint);
 	void monitor();
 	virtual void run();
 	void heartbeat(Poco::Timer& timer);
 	bool receive();
-	void send(std::string endpoint, std::string s);
+	void send(const std::string& endpoint, const std::string& s);
 	void send(SocketIOPacket* packet);
-	void emit(std::string endpoint, std::string eventname, std::string args);
-	void emit(std::string endpoint, std::string eventname, Poco::JSON::Object::Ptr args);
+	void emit(const std::string& endpoint, const std::string& eventname, const std::string& args);
+	void emit(const std::string& endpoint
+			, const std::string& eventname
+			, const std::vector<Poco::Dynamic::Var>& args);
 
 	std::string getUri();
 
@@ -59,13 +60,10 @@ private:
 	std::chrono::milliseconds _pingInterval = std::chrono::milliseconds{25000};
 	std::chrono::milliseconds _pingTimeout = std::chrono::milliseconds{60000};
 
-	SocketIOPacket::SocketIOVersion _version;
-
 	SIOClient* _client = nullptr;
 
 	Thread _thread;
 
-	std::string _sid;
 	bool _connected = false;
 
 	std::unique_ptr<HTTPClientSession> _session;
@@ -74,6 +72,8 @@ private:
 
 	std::vector<char> _buffer;
 	Logger& _logger;
+
+	void sendFrame(const std::string& data);
 };
 
 #endif
