@@ -1,4 +1,7 @@
 #pragma once
+
+#include <memory>
+
 #include "Poco/Notification.h"
 #include "SIOPacket.h"
 
@@ -28,18 +31,12 @@ class SIOClient;
 class SIOEvent : public Notification
 {
 public:
-	SIOEvent(SIOClient* client, SocketIOPacket* data)
+	SIOEvent(SIOClient* client, std::unique_ptr<SocketIOPacket> data)
 			: client(client)
-			, data(data)
+			, data(std::move(data))
 	{
 	}
 
 	SIOClient* client;
-	SocketIOPacket* data;
-
-protected:
-	~SIOEvent()
-	{
-		delete data;
-	};
+	std::unique_ptr<SocketIOPacket> data;
 };
