@@ -4,6 +4,7 @@
 #include <string>
 #include <memory>
 #include <chrono>
+#include <atomic>
 
 #include "Poco/Net/HTTPClientSession.h"
 #include "Poco/Net/WebSocket.h"
@@ -36,10 +37,11 @@ public:
 	~SIOClientImpl(void);
 
 	bool connect();
+	void disconnect();
+
 	bool handshake();
 	bool openSocket();
 
-	void disconnect(const std::string& endpoint);
 	void monitor();
 	virtual void run();
 	void heartbeat(Poco::Timer& timer);
@@ -51,15 +53,29 @@ public:
 			, const std::string& eventname
 			, const std::vector<Poco::Dynamic::Var>& args);
 
+	enum FrameType : char
+	{
+		OPEN = '0', CLOSE = '1', PING = '2', PONG = '3', MESSAGE = '4', UPGRADE = '5', NOOP = '6'
+	};
+	enum Type : char
+	{
+		CONNECT = '0', DISCONNECT = '1', EVENT = '2', ACK = '3', ERROR = '4', BINARY_EVENT = '5', BINARY_ACK = '6'
+	};
+
+	const bool isConnected() const
+	{
+		return _isConnected;
+	}
+
 private:
 	const Poco::URI _uri;
 
 	std::chrono::milliseconds _pingInterval = std::chrono::milliseconds{25000};
-	std::chrono::milliseconds _pingTimeout = std::chrono::milliseconds{60000};
+	std::chrono::milliseconds _pingTimeout = std::chrono::milliseconds{18000};
 
 	Thread _thread;
-
-	bool _connected = false;
+	std::atomic<bool> _isConnected;
+	std::string _sid;
 
 	std::unique_ptr<HTTPClientSession> _session;
 	std::unique_ptr<Timer> _heartbeatTimer;
@@ -71,6 +87,11 @@ private:
 	Logger& _logger;
 
 	void sendFrame(const std::string& data);
+	void sendFrame(const char data);
+	void sendFrame(FrameType frameType, Type type);
+
+	void onHandshake(const std::string& data);
+	void onMessage(const std::vector<char>& buffer);
 };
 
 #endif

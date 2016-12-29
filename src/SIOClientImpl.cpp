@@ -1,5 +1,6 @@
 #include "SIOClientImpl.h"
 
+#include <chrono>
 #include <cassert>
 
 #include "Poco/Net/HTTPRequest.h"
@@ -46,6 +47,7 @@ using Poco::URI;
 
 SIOClientImpl::SIOClientImpl(URI uri, const Listener& eventHandler, Logger& logger)
 		: _uri(uri)
+		, _isConnected{false}
 		, _eventHandler(eventHandler)
 		, _logger(logger)
 {
@@ -53,13 +55,7 @@ SIOClientImpl::SIOClientImpl(URI uri, const Listener& eventHandler, Logger& logg
 
 SIOClientImpl::~SIOClientImpl(void)
 {
-	_thread.join();
-	disconnect("");
-
-	if (_webSocket)
-	{
-		_webSocket->shutdown();
-	}
+	disconnect();
 }
 
 bool SIOClientImpl::connect()
@@ -130,6 +126,11 @@ bool SIOClientImpl::handshake()
 
 bool SIOClientImpl::openSocket()
 {
+	if (_webSocket)
+	{
+		disconnect();
+	}
+
 	Poco::URI uri{_uri};
 	uri.setScheme("");//I'm not sure why we must remove it
 	uri.addQueryParameter("EIO", "3");
@@ -165,13 +166,25 @@ bool SIOClientImpl::openSocket()
 		return false;
 	}
 
-	_logger.information("Send ping");
-	std::string s = "5";//That's a ping https://github.com/Automattic/engine.io-parser/blob/1b8e077b2218f4947a69f5ad18be2a512ed54e93/lib/index.js#L21
-	_webSocket->sendFrame(s.data(), s.size());
+	using namespace std::chrono;
+	Poco::Timestamp timestamp;
+	while (timestamp.elapsed() < duration_cast<microseconds>(_pingTimeout).count() &&
+		   _isConnected == false)//wait for connect
+	{
+		if (receive() == false)//is blocking call
+		{
+			break;
+		}
+		_logger.information("WebSocket waiting for connection");
+	}
+
+	if (_isConnected == false)
+	{
+		_logger.warning("WebSocket can't connect, timeout or error");
+		return false;
+	}
 
 	_logger.information("WebSocket Created and initialised");
-
-	_connected = true;//FIXME on 1.0.x the server acknowledge the connection
 
 	_heartbeatTimer = std::unique_ptr<Timer>(new Timer(_pingInterval.count(), _pingInterval.count()));
 	TimerCallback<SIOClientImpl> heartbeat(*this, &SIOClientImpl::heartbeat);
@@ -179,23 +192,25 @@ bool SIOClientImpl::openSocket()
 
 	_thread.start(*this);
 
-	return _connected;
+	return true;
 
 }
 
-void SIOClientImpl::disconnect(const std::string& endpoint)
+void SIOClientImpl::disconnect()
 {
-	std::string s;
-	s = "41" + endpoint;
-	_webSocket->sendFrame(s.data(), s.size());
-	if (endpoint == "")
+	if (_isConnected == false)
 	{
-		_logger.information("Disconnect");
-		_heartbeatTimer->stop();
-		_connected = false;
+		return;
 	}
+	_logger.information("Disconnect");
+
+	_isConnected = false;
+	_heartbeatTimer->stop();
 
 	_webSocket->shutdown();
+	_thread.join();
+
+	_webSocket.reset();//clear socket
 }
 
 void SIOClientImpl::heartbeat(Poco::Timer& timer)
@@ -212,10 +227,10 @@ void SIOClientImpl::run()
 
 void SIOClientImpl::monitor()
 {
-	do
+	while (_isConnected)
 	{
-		receive();
-	} while (_connected);
+		receive();//is blocking call
+	}
 }
 
 void SIOClientImpl::send(const std::string& endpoint, const std::string& s)
@@ -235,7 +250,7 @@ void SIOClientImpl::emit(const std::string& endpoint
 	{
 		packet->addData(element);
 	}
-	this->send(packet);
+	send(packet);
 }
 
 void SIOClientImpl::emit(const std::string& endpoint, const std::string& eventname, const std::string& args)
@@ -245,30 +260,12 @@ void SIOClientImpl::emit(const std::string& endpoint, const std::string& eventna
 	packet->setEndpoint(endpoint);
 	packet->setEvent(eventname);
 	packet->addData(args);
-	this->send(packet);
+	send(packet);
 }
-
-void SIOClientImpl::send(SocketIOPacket* packet)
-{
-	std::string req = packet->toString();
-	if (_connected)
-	{
-		_logger.information("-->SEND:%s", req);
-		_webSocket->sendFrame(req.data(), req.size());
-	}
-	else
-	{
-		_logger.warning("Cant send the message (%s) because disconnected", req);
-	}
-}
-
-enum PacketType : char
-{
-	OPEN = '0', CLOSE = '1', PING = '2', PONG = '3', MESSAGE = '4', UPGRADE = '5', NOOP = '6'
-};
 
 bool SIOClientImpl::receive()
 {
+	assert(_webSocket);
 	if (_buffer.size() < _webSocket->getReceiveBufferSize())
 	{
 		_buffer.resize(_webSocket->getReceiveBufferSize());
@@ -277,113 +274,64 @@ bool SIOClientImpl::receive()
 
 	int flags = 0;
 	int bytesReceived = _webSocket->receiveFrame(&_buffer[0], static_cast<int>(_buffer.size()), flags);
-	_buffer.resize(bytesReceived);
+	if (flags & WebSocket::FrameOpcodes::FRAME_OP_CLOSE)
+	{
+		_logger.information("Close frame");
+		return true;
+	}
 	if (bytesReceived <= 0)
 	{
 		//Shutdown connection or closed
 		_logger.information("Shutdown connection or closed by host");
-		disconnect("");
+		disconnect();
 		return false;
 	}
-	_logger.information("Bytes received: %d ", bytesReceived);
+	_buffer.resize(bytesReceived);
 
 	const char control = _buffer.at(0);
 
-	_logger.information("Buffer received:");
+	_logger.information("Buffer received: %z bytes flags %d", _buffer.size(), flags);
 	_logger.information("%s", std::string{_buffer.begin(), _buffer.end()});
 	_logger.information("Control code: %c", control);
 	switch (control)
 	{
-		case PacketType::OPEN:
+		case FrameType::OPEN:
 		{
 			auto foundBegin = std::find(_buffer.begin(), _buffer.end(), '{');
 			assert(foundBegin != _buffer.end());
-			auto foundEnd = std::find(foundBegin, _buffer.end(), '}');
-			assert(foundEnd != _buffer.end());
-			++foundEnd;
+			auto foundEnd = std::find(_buffer.rbegin(), _buffer.rend(), '}');
+			assert(foundEnd != _buffer.rend());
 
-			Parser parser;
-			const auto& result = parser.parse(std::string{foundBegin, foundEnd});
-			const auto& message = result.extract<Object::Ptr>();
-
-			_pingInterval = std::chrono::milliseconds{message->get("pingInterval").convert<std::size_t>()};
-			_pingTimeout = std::chrono::milliseconds{message->get("pingTimeout").convert<std::size_t>()};
-
+			onHandshake(std::string{foundBegin, foundEnd.base()});
 			break;
 		}
-		case PacketType::CLOSE:
+		case FrameType::CLOSE:
 			_logger.information("Host want to close");
-			disconnect("");
+			disconnect();
 			break;
-		case PacketType::PING:
+		case FrameType::PING:
 			_logger.information("Ping received, send pong");
-			_buffer.insert(_buffer.begin(), PacketType::PONG);
+			_buffer.insert(_buffer.begin(), FrameType::PONG);
 			_webSocket->sendFrame(&_buffer[0], _buffer.size());
 			break;
-		case PacketType::PONG:
+		case FrameType::PONG:
 		{
 			_logger.information("Pong received");
 			std::string data{_buffer.begin(), _buffer.end()};
 			if (data.find("probe") != std::string::npos)
 			{
 				_logger.information("Request Update");
-				sendFrame({1, PacketType::UPGRADE});
+				sendFrame(FrameType::UPGRADE);
 			}
 			break;
 		}
-		case PacketType::MESSAGE:
-		{
-			const char control = _buffer.at(1);
-			_logger.information("Message code: [%c]", control);
-			switch (control)
-			{
-				case PacketType::OPEN:
-					_logger.information("Socket Connected");
-					_connected = true;
-					break;
-				case PacketType::CLOSE:
-					_logger.information("Socket Disconnected");
-					disconnect("");
-					break;
-				case PacketType::PING:
-				{
-					auto foundBegin = std::find(_buffer.begin(), _buffer.end(), '[');
-					assert(foundBegin != _buffer.end());
-					auto foundEnd = std::find(foundBegin, _buffer.end(), ']');
-					assert(foundEnd != _buffer.end());
-					++foundEnd;
-
-					Parser parser;
-					auto result = parser.parse(std::string{foundBegin, foundEnd});
-					auto message = result.extract<Poco::JSON::Array::Ptr>();
-
-					auto eventName = message->get(0).toString();
-					message->remove(0);
-					if (_eventHandler)
-					{
-						_eventHandler(eventName, message);
-					}
-				}
-					break;
-				case PacketType::PONG:
-					_logger.information("Message Ack");
-					break;
-				case PacketType::MESSAGE:
-					_logger.information("Error");
-					break;
-				case PacketType::UPGRADE:
-					_logger.information("Binary Event");
-					break;
-				case PacketType::NOOP:
-					_logger.information("Binary Ack");
-					break;
-			}
-		}
+		case FrameType::MESSAGE:
+			onMessage(_buffer);
 			break;
-		case PacketType::UPGRADE:
+		case FrameType::UPGRADE:
 			_logger.information("Upgrade required");
 			break;
-		case PacketType::NOOP:
+		case FrameType::NOOP:
 			_logger.information("Noop");
 			break;
 	}
@@ -391,7 +339,127 @@ bool SIOClientImpl::receive()
 	return true;
 }
 
+void SIOClientImpl::send(SocketIOPacket* packet)
+{
+	std::string req = packet->toString();
+	if (_isConnected)
+	{
+		_logger.information("-->SEND:%s", req);
+		assert(_webSocket);
+		_webSocket->sendFrame(req.data(), req.size());
+	}
+	else
+	{
+		_logger.warning("Cant send the message (%s) because disconnected", req);
+	}
+}
+
 void SIOClientImpl::sendFrame(const std::string& data)
 {
-	_webSocket->sendFrame(data.c_str(), data.size());
+	if (_isConnected)
+	{
+		_logger.information("-->SEND:%s", data);
+		assert(_webSocket);
+		_webSocket->sendFrame(data.c_str(), data.size());
+	}
+	else
+	{
+		_logger.warning("Cant send the message (%s) because disconnected", data);
+	}
 }
+
+void SIOClientImpl::sendFrame(const char data)
+{
+	if (_isConnected)
+	{
+		_logger.information("-->SEND:%c", data);
+		assert(_webSocket);
+		_webSocket->sendFrame(&data, 1);
+	}
+	else
+	{
+		_logger.warning("Cant send the message (%c) because disconnected", data);
+	}
+}
+
+void SIOClientImpl::sendFrame(SIOClientImpl::FrameType frameType, SIOClientImpl::Type type)
+{
+	if (_isConnected)
+	{
+		_logger.information("-->SEND:%c%c", (char) frameType, (char) type);
+		assert(_webSocket);
+		char data[] = {frameType, type};
+		_webSocket->sendFrame(data, sizeof(data));
+	}
+	else
+	{
+		_logger.warning("Cant send the message (%c%c) because disconnected", (char) frameType, (char) type);
+	}
+}
+
+void SIOClientImpl::onHandshake(const std::string& data)
+{
+	assert(data.front() == '{');
+	assert(data.back() == '}');
+	Parser parser;
+	const auto& result = parser.parse(data);
+	const auto& message = result.extract<Object::Ptr>();
+
+	_pingInterval = std::chrono::milliseconds{message->get("pingInterval").convert<std::size_t>()};
+	_pingTimeout = std::chrono::milliseconds{message->get("pingTimeout").convert<std::size_t>()};
+	_sid = message->get("sid").toString();
+}
+
+void SIOClientImpl::onMessage(const std::vector<char>& buffer)
+{
+	const char control = buffer.at(1);
+
+	_logger.information("Message code: [%c]", control);
+	switch (control)
+	{
+		case Type::CONNECT:
+			_logger.information("Socket Connected");
+			_isConnected = true;
+			break;
+		case Type::DISCONNECT:
+			_logger.information("Socket Disconnected by server");
+			disconnect();
+			break;
+		case Type::EVENT:
+		{
+			auto foundBegin = std::find(buffer.begin(), buffer.end(), '[');
+			assert(foundBegin != buffer.end());
+			auto foundEnd = std::find(buffer.rbegin(), buffer.rend(), ']');
+			assert(foundEnd != buffer.rend());
+
+			auto extracted = std::string{foundBegin, foundEnd.base()};
+			assert(extracted.front() == '[');
+			assert(extracted.back() == ']');
+
+			Parser parser;
+			auto result = parser.parse(extracted);
+			auto message = result.extract<Poco::JSON::Array::Ptr>();
+
+			auto eventName = message->get(0).toString();
+			message->remove(0);
+			if (_eventHandler)
+			{
+				_eventHandler(eventName, message);
+			}
+			break;
+		}
+		case Type::ACK:
+			_logger.information("Message Ack");
+			break;
+		case Type::ERROR:
+			_logger.information("Error");
+			break;
+		case Type::BINARY_EVENT:
+			_logger.information("Binary Event");
+			break;
+		case Type::BINARY_ACK:
+			_logger.information("Binary Ack");
+			break;
+	}
+}
+

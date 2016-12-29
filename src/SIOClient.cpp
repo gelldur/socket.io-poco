@@ -24,7 +24,7 @@ bool SIOClient::connect()
 
 void SIOClient::disconnect()
 {
-	_socket->disconnect("");
+	_socket->disconnect();
 }
 
 void SIOClient::on(const std::string& name, const SIOClientImpl::Listener& listener)

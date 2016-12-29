@@ -59,7 +59,6 @@ public:
 	virtual std::string stringify();
 
 	static SocketIOPacket* createPacketWithType(std::string type, SocketIOPacket::SocketIOVersion version);
-	static SocketIOPacket* createPacketWithTypeIndex(int type, SocketIOPacket::SocketIOVersion version);
 protected:
 	std::string _pId;//id message
 	std::string _ack;//

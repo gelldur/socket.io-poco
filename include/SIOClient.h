@@ -24,11 +24,15 @@ public:
 	void on(const std::string& name, const SIOClientImpl::Listener& listener);
 	void fireEvent(const std::string& name, const Poco::JSON::Array::Ptr& args);
 
+	bool isConnected() const
+	{
+		return _socket && _socket->isConnected();
+	}
+
 private:
 	const Poco::URI _uri;
 
 	std::unique_ptr<SIOClientImpl> _socket;
-
 	std::multimap<std::string, SIOClientImpl::Listener> _listeners;
 };
 

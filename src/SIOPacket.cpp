@@ -224,19 +224,3 @@ SocketIOPacket* SocketIOPacket::createPacketWithType(std::string type, SocketIOP
 	ret->initWithType(type);
 	return ret;
 }
-
-SocketIOPacket* SocketIOPacket::createPacketWithTypeIndex(int type, SocketIOPacket::SocketIOVersion version)
-{
-	SocketIOPacket* ret;
-	switch (version)
-	{
-		case SocketIOPacket::V09x:
-			ret = new SocketIOPacket;
-			break;
-		case SocketIOPacket::V10x:
-			return new SocketIOPacketV10x;
-			break;
-	}
-	ret->initWithTypeIndex(type);
-	return ret;
-}
